@@ -1,0 +1,637 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>美食地图小程序</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://code.iconify.design/3/3.1.1/iconify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .app-container {
+            width: 375px; height: 812px;
+            display: flex; flex-direction: column; overflow: hidden;
+            background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); 
+            border: 1px solid #E5E7EB;
+        }
+        .fixed-section { flex-shrink: 0; }
+        .content-flex { flex: 1; overflow-y: auto; min-height: 0; padding: 12px; }
+        
+        /* 页面间距 */
+        .page-container { display: flex; flex-wrap: wrap; gap: 35px; padding: 20px; 
+                         background: #F9FAFB; justify-content: flex-start; min-width: 1500px; }
+        
+        /* 卡片样式 */
+        .glass-card {
+            background: rgba(255,255,255,0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        
+        /* 主题颜色 */
+        .primary-btn { 
+            background: linear-gradient(135deg, #FF6B6B, #FF9B7B); 
+            color: white; 
+        }
+        .primary-btn:active { filter: brightness(0.95); }
+        
+        /* 操作区域 */
+        .action-btn:active { filter: brightness(0.8); }
+        
+        /* 菜品滚动区 */
+        .menu-scroll { -webkit-overflow-scrolling: touch; }
+        
+        /* 上传区域 */
+        .upload-area { border: 1px dashed #D1D5DB; }
+        
+        /* 禁用状态 */
+        .submit-btn:disabled { opacity: 0.5; }
+        
+        /* 评分星星 */
+        .star-filled { color: #FFD166; }
+        .star-half::after { content: ""; width: 50%; overflow: hidden; }
+        
+        /* 轮播风格 */
+        .banner-img { aspect-ratio: 16/9; object-fit: cover; }
+        
+        /* 图文混排 */
+        .review-content { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="page-container">
+        <!-- 地图页 -->
+        <div class="app-container relative">
+            <!-- 顶部搜索栏 -->
+            <div class="fixed-section bg-white h-[56px] flex items-center px-4">
+                <div class="relative w-full">
+                    <input type="text" placeholder="搜索美食或地点" class="w-full bg-gray-100 rounded-lg py-2 px-10 focus:outline-none">
+                    <span class="absolute left-3 top-2.5">
+                        <span class="iconify" data-icon="mdi:magnify" style="color: #9ca3af; font-size: 20px;"></span>
+                    </span>
+                </div>
+            </div>
+            
+            <!-- 视图切换按钮 -->
+            <div class="fixed-section h-[40px] flex justify-end px-4 mt-1 z-10">
+                <div class="bg-white rounded-full shadow flex">
+                    <button id="mapViewBtn" class="px-3 py-1.5 rounded-full text-sm font-medium primary-btn">
+                        <span class="iconify mr-1" data-icon="mdi:map-outline"></span>地图
+                    </button>
+                    <button id="listViewBtn" class="px-3 py-1.5 rounded-full text-sm font-medium text-gray-600">
+                        <span class="iconify mr-1" data-icon="mdi:format-list-bulleted"></span>列表
+                    </button>
+                </div>
+            </div>
+                
+            <!-- 地图内容 -->
+            <div class="content-flex hide-scrollbar p-0 bg-gray-50 relative">
+                <div id="mapView" class="absolute inset-0">
+                    <div id="mapContainer" class="w-full h-full bg-[#f0f7ff]" style="position: relative; width: 374px; height: 755px; padding: 0px; margin: 0px; border-width: 0px; cursor: default;">
+                        <!-- 简易地图示意图 -->
+                        <img src = "map.jpg" alt = "Map illustration" class="w-full h-full object-cover">
+                    </div>
+                </div>
+            </div>
+            <script>
+                // 保留原有切换逻辑，但地图和列表都可见
+
+                // 切换按钮逻辑保留，但不隐藏任何板块
+                const mapViewBtn = document.getElementById('mapViewBtn');
+                const listViewBtn = document.getElementById('listViewBtn');
+                // 不再隐藏板块
+                mapViewBtn.addEventListener('click', function() {
+                    mapViewBtn.classList.add('primary-btn');
+                    mapViewBtn.classList.remove('text-gray-600');
+                    listViewBtn.classList.remove('primary-btn');
+                    listViewBtn.classList.add('text-gray-600');
+                    myChart.resize();
+                });
+                listViewBtn.addEventListener('click', function() {
+                    listViewBtn.classList.add('primary-btn');
+                    listViewBtn.classList.remove('text-gray-600');
+                    mapViewBtn.classList.remove('primary-btn');
+                    mapViewBtn.classList.add('text-gray-600');
+                });
+            </script>
+            
+            <!-- 底部栏导航 -->
+            <div class="fixed-section bg-white h-[80px] flex items-center justify-around border-t border-gray-100">
+                <div class="flex flex-col items-center text-[#FF6B6B]">
+                    <span class="iconify text-2xl" data-icon="mdi:map-marker"></span>
+                    <span class="text-xs mt-1">美食</span>
+                </div>
+                <div class="flex flex-col items-center text-gray-400">
+                    <span class="iconify text-2xl" data-icon="mdi:plus-circle-outline"></span>
+                    <span class="text-xs mt-1">上传</span>
+                </div>
+                <div class="flex flex-col items-center text-gray-400">
+                    <span class="iconify text-2xl" data-icon="mdi:account-outline"></span>
+                    <span class="text-xs mt-1">我的</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 列表页 -->
+        <div class="app-container relative">
+            <!-- 顶部搜索栏 -->
+            <div class="fixed-section bg-white h-[56px] flex items-center px-4">
+                <div class="relative w-full">
+                    <input type="text" placeholder="搜索美食或地点" class="w-full bg-gray-100 rounded-lg py-2 px-10 focus:outline-none">
+                    <span class="absolute left-3 top-2.5">
+                        <span class="iconify" data-icon="mdi:magnify" style="color: #9ca3af; font-size: 20px;"></span>
+                    </span>
+                </div>
+            </div>
+            
+            <!-- 视图切换按钮 -->
+            <div class="fixed-section h-[40px] flex justify-end px-4 mt-1 z-10">
+                <div class="bg-white rounded-full shadow flex">
+                    <button id="mapViewBtn" class="px-3 py-1.5 rounded-full text-sm font-medium text-gray-600">
+                        <span class="iconify mr-1" data-icon="mdi:map-outline"></span>地图
+                    </button>
+                    <button id="listViewBtn" class="px-3 py-1.5 rounded-full text-sm font-medium primary-btn">
+                        <span class="iconify mr-1" data-icon="mdi:format-list-bulleted"></span>列表
+                    </button>
+                </div>
+            </div>
+                
+            <!-- 列表内容 -->
+            <div class="content-flex hide-scrollbar p-0 bg-white relative">
+                <div id="listView" class="absolute inset-0 bg-white p-3 overflow-y-auto">
+                    <div class="space-y-4">
+                        <!-- 餐厅列表项 -->
+                        <div class="glass-card p-3 flex">
+                            <img src="https://modao.cc/ai/uploads/ai_pics/10/101906/aigp_1754495296.jpeg" class="w-20 h-20 rounded-lg object-cover" alt="Restaurant">
+                            <div class="ml-3 flex-1">
+                                <h3 class="font-bold">老北京涮肉</h3>
+                                <div class="flex items-center text-xs text-gray-500 mt-1">
+                                    <span class="flex items-center">
+                                        <span class="iconify star-filled" data-icon="mdi:star"></span>
+                                        4.8
+                                    </span>
+                                    <span class="mx-2">|</span>
+                                    <span>人均¥108</span>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1">西城区西单北大街120号</p>
+                                <div class="flex mt-2">
+                                    <span class="px-1.5 py-0.5 bg-[#FF6B6B]/10 text-[#FF6B6B] rounded text-xs">火锅</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="glass-card p-3 flex">
+                            <img src="https://modao.cc/ai/uploads/ai_pics/10/101907/aigp_1754495300.jpeg" class="w-20 h-20 rounded-lg object-cover" alt="Restaurant">
+                            <div class="ml-3 flex-1">
+                                <h3 class="font-bold">上海小杨生煎</h3>
+                                <div class="flex items-center text-xs text-gray-500 mt-1">
+                                    <span class="flex items-center">
+                                        <span class="iconify star-filled" data-icon="mdi:star"></span>
+                                        4.6
+                                    </span>
+                                    <span class="mx-2">|</span>
+                                    <span>人均¥45</span>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1">黄浦区南京东路168号</p>
+                                <div class="flex mt-2">
+                                    <span class="px-1.5 py-0.5 bg-[#FF6B6B]/10 text-[#FF6B6B] rounded text-xs">小吃</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="glass-card p-3 flex">
+                            <img src="https://modao.cc/ai/uploads/ai_pics/10/101908/aigp_1754495304.jpeg" class="w-20 h-20 rounded-lg object-cover" alt="Restaurant">
+                            <div class="ml-3 flex-1">
+                                <h3 class="font-bold">广州早茶</h3>
+                                <div class="flex items-center text-xs text-gray-500 mt-1">
+                                    <span class="flex items-center">
+                                        <span class="iconify star-filled" data-icon="mdi:star"></span>
+                                        4.9
+                                    </span>
+                                    <span class="mx-2">|</span>
+                                    <span>人均¥78</span>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1">越秀区北京路89号</p>
+                                <div class="flex mt-2">
+                                    <span class="px-1.5 py-0.5 bg-[#FF6B6B]/10 text-[#FF6B6B] rounded text-xs">粤菜</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="glass-card p-3 flex">
+                            <img src="https://modao.cc/ai/uploads/ai_pics/10/101909/aigp_1754495306.jpeg" class="w-20 h-20 rounded-lg object-cover" alt="Restaurant">
+                            <div class="ml-3 flex-1">
+                                <h3 class="font-bold">深井烧鹅</h3>
+                                <div class="flex items-center text-xs text-gray-500 mt-1">
+                                    <span class="flex items-center">
+                                        <span class="iconify star-filled" data-icon="mdi:star"></span>
+                                        4.7
+                                    </span>
+                                    <span class="mx-2">|</span>
+                                    <span>人均¥92</span>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1">深圳市福田区华强北路888号</p>
+                                <div class="flex mt-2">
+                                    <span class="px-1.5 py-0.5 bg-[#FF6B6B]/10 text-[#FF6B6B] rounded text-xs">烧腊</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="glass-card p-3 flex">
+                            <img src="https://modao.cc/ai/uploads/ai_pics/10/101905/aigp_1754495294.jpeg" class="w-20 h-20 rounded-lg object-cover" alt="Restaurant">
+                            <div class="ml-3 flex-1">
+                                <h3 class="font-bold">杭帮菜</h3>
+                                <div class="flex items-center text-xs text-gray-500 mt-1">
+                                    <span class="flex items-center">
+                                        <span class="iconify star-filled" data-icon="mdi:star"></span>
+                                        4.5
+                                    </span>
+                                    <span class="mx-2">|</span>
+                                    <span>人均¥120</span>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1">杭州市西湖区西湖大道1号</p>
+                                <div class="flex mt-2">
+                                    <span class="px-1.5 py-0.5 bg-[#FF6B6B]/10 text-[#FF6B6B] rounded text-xs">杭帮菜</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 底部栏导航 -->
+            <div class="fixed-section bg-white h-[80px] flex items-center justify-around border-t border-gray-100">
+                <div class="flex flex-col items-center text-[#FF6B6B]">
+                    <span class="iconify text-2xl" data-icon="mdi:map-marker"></span>
+                    <span class="text-xs mt-1">美食</span>
+                </div>
+                <div class="flex flex-col items-center text-gray-400">
+                    <span class="iconify text-2xl" data-icon="mdi:plus-circle-outline"></span>
+                    <span class="text-xs mt-1">上传</span>
+                </div>
+                <div class="flex flex-col items-center text-gray-400">
+                    <span class="iconify text-2xl" data-icon="mdi:account-outline"></span>
+                    <span class="text-xs mt-1">我的</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 详情页 -->
+        <div class="app-container">
+            <!-- 顶部返回+标题 -->
+            <div class="fixed-section bg-white h-[56px] flex items-center px-4">
+                <button class="w-8 h-8 flex items-center justify-center">
+                    <span class="iconify text-xl" data-icon="mdi:arrow-left"></span>
+                </button>
+                <h2 class="text-lg font-medium ml-2">餐厅详情</h2>
+            </div>
+            
+            <div class="content-flex hide-scrollbar flex flex-col">
+                <!-- 轮播图区域 -->
+                <div class="overflow-hidden relative">
+                    <img id="1" src="https://modao.cc/ai/uploads/ai_pics/10/101905/aigp_1754495294.jpeg" alt="Restaurant banner images" class="w-full banner-img">
+                </div>
+                
+                <!-- 基础信息 -->
+                <div class="glass-card p-4 mt-3">
+                    <h1 class="text-xl font-bold">新粤记茶餐厅</h1>
+                    <div class="flex items-center text-gray-500 mt-1 text-sm">
+                        <span class="flex items-center mr-2">
+                            <span class="iconify" data-icon="mdi:star"></span>
+                            4.7分
+                        </span>
+                        <span>人均￥89</span>
+                    </div>
+                    
+                    <div class="mt-3 flex items-center">
+                        <span class="iconify text-gray-400"></span>
+                        <span class="ml-2 text-gray-700">天河区珠江新城花城大道85号</span>
+                    </div>
+                    
+                    <div class="mt-2 flex items-center">
+                        <span class="iconify text-gray-400" data-icon="mdi:clock"></span>
+                        <span class="ml-2 text-gray-700">11:00-22:00</span>
+                    </div>
+                </div>
+                
+                <!-- 特色菜品 -->
+                <h3 class="font-bold mt-5 mb-3">热门菜品</h3>
+                <div class="menu-scroll flex hide-scrollbar overflow-x-auto space-x-3 pb-3">
+                    <div class="flex-shrink-0 w-28">
+                        <img id="3" src="https://modao.cc/ai/uploads/ai_pics/10/101906/aigp_1754495296.jpeg" alt="Shrimp dumplings" class="w-full h-24 rounded-lg object-cover">
+                        <p class="text-sm mt-1 text-center">水晶虾饺皇</p>
+                    </div>
+                    <div class="flex-shrink-0 w-28">
+                        <img id="4" src="https://modao.cc/ai/uploads/ai_pics/10/101907/aigp_1754495300.jpeg" alt="Roasted goose" class="w-full h-24 rounded-lg object-cover">
+                        <p class="text-sm mt-1 text-center">深井烧鹅</p>
+                    </div>
+                    <div class="flex-shrink-0 w-28">
+                        <img id="5" src="https://modao.cc/ai/uploads/ai_pics/10/101908/aigp_1754495304.jpeg" alt="Pineapple bun" class="w-full h-24 rounded-lg object-cover">
+                        <p class="text-sm mt-1 text-center">冰火菠萝油</p>
+                    </div>
+                    <div class="flex-shrink-0 w-28">
+                        <img id="6" src="https://modao.cc/ai/uploads/ai_pics/10/101909/aigp_1754495306.jpeg" alt="Rice noodles roll" class="w-full h-24 rounded-lg object-cover">
+                        <p class="text-sm mt-1 text-center">鲜虾肠粉</p>
+                    </div>
+                </div>
+                
+                <!-- 用户评价 -->
+                <h3 class="font-bold mt-6 mb-3">用户评价</h3>
+                <div class="glass-card p-3">
+                    <div class="flex items-center">
+                        <img id="7" src="https://modao.cc/ai/uploads/ai_pics/10/101910/aigp_1754495308.jpeg" alt="User avatar" class="w-9 h-9 rounded-full">
+                        <div class="ml-2">
+                            <p class="font-medium">美食家小林</p>
+                            <div class="flex text-xs items-center text-gray-500">
+                                <span>2023-10-15</span>
+                                <div class="ml-2 flex">
+                                    <span class="iconify star-filled" data-icon="mdi:star"></span>
+                                    <span class="iconify star-filled" data-icon="mdi:star"></span>
+                                    <span class="iconify star-filled" data-icon="mdi:star"></span>
+                                    <span class="iconify star-filled" data-icon="mdi:star"></span>
+                                    <span class="iconify star-half" data-icon="mdi:star"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="mt-2 text-gray-700 review-content">虾饺非常正宗，皮薄馅大虾仁很新鲜；烧鹅外皮酥脆肉质鲜嫩，强烈推荐。环境优雅服务周到，适合朋友聚餐。</p>
+                </div>
+            </div>
+            
+            <!-- 底部固定操作栏 -->
+            <div class="fixed-section bg-white h-16 flex justify-between items-center border-t border-gray-100 px-4">
+                <button class="flex items-center text-[#FF6B6B]">
+                    <span class="iconify" data-icon="mdi:heart" data-width="24"></span>
+                    <span class="ml-1">收藏</span>
+                </button>
+                <button class="flex items-center text-gray-600">
+                    <span class="iconify" data-icon="mdi:share-variant" data-width="24"></span>
+                    <span class="ml-1">分享</span>
+                </button>
+            </div>
+        </div>
+        
+        <!-- 上传页 -->
+        <div class="app-container">
+            <div class="fixed-section bg-white h-[56px] flex items-center px-4">
+                <button class="w-8 h-8 flex items-center justify-center">
+                    <span class="iconify text-xl" data-icon="mdi:arrow-left"></span>
+                </button>
+                <h2 class="text-lg font-medium text-center flex-1">美食分享</h2>
+            </div>
+            
+            <div class="content-flex hide-scrollbar">
+                <form class="space-y-5">
+                    <!-- 餐厅名称 -->
+                    <div>
+                        <label class="block text-sm font-medium mb-1">餐厅名称*</label>
+                        <input type="text" placeholder="输入餐厅名称" class="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring focus:ring-red-100 focus:outline-none">
+                    </div>
+                    
+                    <!-- 地址选择 -->
+                    <div>
+                        <label class="block text-sm font-medium mb-1">地图位置*</label>
+                        <div class="flex items-center">
+                            <input type="text" placeholder="选择或搜索位置" class="flex-1 border border-gray-200 rounded-lg px-3 py-2 focus:ring focus:ring-red-100 focus:outline-none">
+                            <button type="button" class="ml-2 w-10 h-10 flex items-center justify-center bg-gray-100 rounded-lg">
+                                <span class="iconify" data-icon="mdi:map-marker-outline"></span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- 餐厅类型 -->
+                    <div>
+                        <label class="block text-sm font-medium mb-2">餐厅类型*</label>
+                        <div class="flex flex-wrap gap-2">
+                            <div class="px-3 py-1 bg-[#FF6B6B]/10 text-[#FF6B6B] rounded-full text-sm">中餐</div>
+                            <div class="px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-sm">西餐</div>
+                            <div class="px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-sm">日料</div>
+                            <div class="px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-sm">火锅</div>
+                            <div class="px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-sm">咖啡馆</div>
+                        </div>
+                    </div>
+                    
+                    <!-- 营业时间 -->
+                    <div>
+                        <label class="block text-sm font-medium mb-1">营业时间（选填）</label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <input type="time" class="border border-gray-200 rounded-lg px-3 py-2 focus:ring focus:ring-red-100">
+                            <input type="time" class="border border-gray-200 rounded-lg px-3 py-2 focus:ring focus:ring-red-100">
+                        </div>
+                    </div>
+                    
+                    <!-- 图片上传 -->
+                    <div>
+                        <label class="block text-sm font-medium mb-1">上传照片（选填）</label>
+                        <div class="upload-area rounded-lg flex flex-col items-center justify-center p-5">
+                            <span class="iconify text-4xl text-gray-300 mb-2" data-icon="mdi:cloud-upload"></span>
+                            <p class="text-gray-500 text-sm">点击上传美食照片</p>
+                        </div>
+                    </div>
+                    
+                    <!-- 推荐理由 -->
+                    <div>
+                        <label class="block text-sm font-medium mb-1">推荐理由（选填）</label>
+                        <textarea placeholder="分享你的美食体验..." class="w-full h-32 border border-gray-200 rounded-lg px-3 py-2 focus:ring focus:ring-red-100 focus:outline-none"></textarea>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- 提交按钮 -->
+            <div class="fixed-section bg-white h-16 flex items-center justify-center border-t border-gray-100 px-4">
+                <button class="primary-btn rounded-full w-full py-3 font-medium text-center transition-all transform active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed" disabled="">
+                    提交分享
+                </button>
+            </div>
+        </div>
+        
+        <!-- 个人中心页 -->
+        <div class="app-container">
+            <div class="fixed-section bg-white h-[56px] flex items-center px-4">
+                <button class="w-8 h-8 flex items-center justify-center">
+                    <span class="iconify text-xl" data-icon="mdi:arrow-left"></span>
+                </button>
+                <h2 class="text-lg font-medium text-center flex-1">个人中心</h2>
+            </div>
+            
+            <div class="content-flex hide-scrollbar flex flex-col">
+                <!-- 用户信息 -->
+                <div class="glass-card px-5 py-6 flex items-center">
+                    <img id="8" src="https://modao.cc/ai/uploads/ai_pics/10/101911/aigp_1754495311.jpeg" alt="User profile photo" class="w-16 h-16 rounded-full">
+                    <div class="ml-4">
+                        <h2 class="font-bold text-lg">美食探索者</h2>
+                        <!-- <p class="text-gray-500 text-sm">3.2万粉丝 · 48篇食评</p> -->
+                    </div>
+                    <button class="ml-auto bg-gray-100 rounded-lg p-2">
+                        <span class="iconify" data-icon="mdi:pencil-outline"></span>
+                    </button>
+                </div>
+                
+                <!-- 功能入口 -->
+                <div class="bg-white rounded-xl p-4 grid grid-cols-3 gap-4 mt-6">
+                    <a href="#" class="flex flex-col items-center">
+                        <div class="w-12 h-12 bg-[#FF6B6B]/10 rounded-lg flex items-center justify-center">
+                            <span class="iconify text-xl text-[#FF6B6B]" data-icon="mdi:heart-outline"></span>
+                        </div>
+                        <p class="mt-2 text-sm">我的收藏</p>
+                    </a>
+                    <a href="#" class="flex flex-col items-center">
+                        <div class="w-12 h-12 bg-[#FF6B6B]/10 rounded-lg flex items-center justify-center">
+                            <span class="iconify text-xl text-[#FF6B6B]" data-icon="mdi:file-document-outline"></span>
+                        </div>
+                        <p class="mt-2 text-sm">我的推荐</p>
+                    </a>
+                    <a href="#" class="flex flex-col items-center">
+                        <div class="w-12 h-12 bg-[#FF6B6B]/10 rounded-lg flex items-center justify-center">
+                            <span class="iconify text-xl text-[#FF6B6B]" data-icon="mdi:cog-outline"></span>
+                        </div>
+                        <p class="mt-2 text-sm">设置</p>
+                    </a>
+                </div>
+                
+                <!-- 空状态展示 -->
+                <div class="flex-1 flex flex-col items-center justify-center">
+                    <img id="9" src="https://modao.cc/ai/uploads/ai_pics/10/101912/aigp_1754495313.jpeg" alt="Empty collection illustration" class="w-32 h-32 mb-4">
+                    <p class="text-gray-500">暂无收藏内容</p>
+                </div>
+            </div>
+            
+            <!-- 底部系统操作 -->
+            <div class="fixed-section bg-white h-16 flex items-center justify-center border-t border-gray-100">
+                <button class="py-2 px-8 border border-gray-300 rounded-full">退出登录</button>
+            </div>
+        </div>
+
+
+
+
+
+    <div class="app-container">
+        <div class="fixed-section bg-white h-[56px] flex items-center px-4">
+                <button class="w-8 h-8 flex items-center justify-center">
+                    <span class="iconify text-xl" data-icon="mdi:arrow-left"></span>
+                </button>
+                <h2 class="text-lg font-medium text-center flex-1">我的收藏</h2>
+            </div>
+        <div class="content-flex hide-scrollbar p-0 bg-white relative">
+            <div id="listView" class="absolute inset-0 bg-white p-3 overflow-y-auto">
+                <div class="space-y-4">
+                    <!-- 餐厅列表项 -->
+                    <div class="glass-card p-3 flex">
+                        <img src="https://modao.cc/ai/uploads/ai_pics/10/101906/aigp_1754495296.jpeg" class="w-20 h-20 rounded-lg object-cover" alt="Restaurant">
+                        <div class="ml-3 flex-1">
+                            <h3 class="font-bold">老北京涮肉</h3>
+                            <div class="flex items-center text-xs text-gray-500 mt-1">
+                                <span class="flex items-center">
+                                    <span class="iconify star-filled" data-icon="mdi:star"></span>
+                                    4.8
+                                </span>
+                                <span class="mx-2">|</span>
+                                <span>人均¥108</span>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1">西城区西单北大街120号</p>
+                            <div class="flex mt-2">
+                                <span class="px-1.5 py-0.5 bg-[#FF6B6B]/10 text-[#FF6B6B] rounded text-xs">火锅</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="glass-card p-3 flex">
+                        <img src="https://modao.cc/ai/uploads/ai_pics/10/101907/aigp_1754495300.jpeg" class="w-20 h-20 rounded-lg object-cover" alt="Restaurant">
+                        <div class="ml-3 flex-1">
+                            <h3 class="font-bold">上海小杨生煎</h3>
+                            <div class="flex items-center text-xs text-gray-500 mt-1">
+                                <span class="flex items-center">
+                                    <span class="iconify star-filled" data-icon="mdi:star"></span>
+                                    4.6
+                                </span>
+                                <span class="mx-2">|</span>
+                                <span>人均¥45</span>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1">黄浦区南京东路168号</p>
+                            <div class="flex mt-2">
+                                <span class="px-1.5 py-0.5 bg-[#FF6B6B]/10 text-[#FF6B6B] rounded text-xs">小吃</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <div class="app-container">
+        <div class="fixed-section bg-white h-[56px] flex items-center px-4">
+                <button class="w-8 h-8 flex items-center justify-center">
+                    <span class="iconify text-xl" data-icon="mdi:arrow-left"></span>
+                </button>
+                <h2 class="text-lg font-medium text-center flex-1">我的推荐</h2>
+            </div>
+        <div class="glass-card p-3">
+            <div class="flex items-center">
+                <img id="8" src="https://modao.cc/ai/uploads/ai_pics/10/101911/aigp_1754495311.jpeg" alt="User profile photo" class="w-16 h-16 rounded-full">
+                <div class="ml-2">
+                    <p class="font-bold">美食探索者</p>
+                    <div class="font-medium">
+                        <span>上海小杨生煎</span>
+                    </div>
+                    <div class="flex text-xs items-center text-gray-500">
+                        <span>2023-10-15</span>
+                        <div class="ml-2 flex">
+                            <span class="iconify star-filled" data-icon="mdi:star"></span>
+                            <span class="iconify star-filled" data-icon="mdi:star"></span>
+                            <span class="iconify star-filled" data-icon="mdi:star"></span>
+                            <span class="iconify star-filled" data-icon="mdi:star"></span>
+                            <span class="iconify star-half" data-icon="mdi:star"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <p class="mt-2 text-gray-700 review-content">皮薄馅大：外皮厚度适中，底部煎得酥脆，内馅汁水丰富（尤其是鲜肉和虾仁口味）。食材新鲜：肉质紧实，无明显腥味，部分门店能吃到现包现煎的批次。口味选择：经典鲜肉、虾仁、荠菜等口味满足多样化需求，创新款（如小龙虾生煎）有惊喜感。</p>
+        </div>
+    </div>
+
+
+    <div class="app-container">
+        <div class="fixed-section bg-white h-[56px] flex items-center px-4">
+                <button class="w-8 h-8 flex items-center justify-center">
+                    <span class="iconify text-xl" data-icon="mdi:arrow-left"></span>
+                </button>
+                <h2 class="text-lg font-medium text-center flex-1">设置</h2>    
+        </div>
+        <!-- 新增常用设置项 -->
+        <div class="content-flex hide-scrollbar flex flex-col bg-white">
+            <button class="flex items-center justify-between py-4 border-b border-gray-100 px-2 hover:bg-gray-50">
+                <span class="flex items-center">
+                    <span class="iconify mr-2 text-lg text-gray-400" data-icon="mdi:shield-account-outline"></span>
+                    账号安全
+                </span>
+                <span class="iconify text-gray-300" data-icon="mdi:chevron-right"></span>
+            </button>
+            <button class="flex items-center justify-between py-4 border-b border-gray-100 px-2 hover:bg-gray-50">
+                <span class="flex items-center">
+                    <span class="iconify mr-2 text-lg text-gray-400" data-icon="mdi:bell-outline"></span>
+                    通知设置
+                </span>
+                <span class="iconify text-gray-300" data-icon="mdi:chevron-right"></span>
+            </button>
+            <button class="flex items-center justify-between py-4 border-b border-gray-100 px-2 hover:bg-gray-50">
+                <span class="flex items-center">
+                    <span class="iconify mr-2 text-lg text-gray-400" data-icon="mdi:broom"></span>
+                    清除缓存
+                </span>
+                <span class="iconify text-gray-300" data-icon="mdi:chevron-right"></span>
+            </button>
+            <button class="flex items-center justify-between py-4 px-2 hover:bg-gray-50">
+                <span class="flex items-center">
+                    <span class="iconify mr-2 text-lg text-gray-400" data-icon="mdi:information-outline"></span>
+                    关于我们
+                </span>
+                <span class="iconify text-gray-300" data-icon="mdi:chevron-right"></span>
+            </button>
+        </div>
+    </div>
+
+</body></html>
